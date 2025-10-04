@@ -1,85 +1,76 @@
-name: "Build and push images"
+name: Build and push to GitHub Container Registry
 
 on:
-  # 1. 触发方式一：当代码推送到main分支时
+  # 1. 【新的触发方式】当代码推送到main分支时自动触发
   push:
     branches:
       - "main" # 如果您的主分支是 'master'，请在这里修改
-    tags:
-      - "v*.*.*" # 触发方式二：当推送一个 "v" 开头的git标签时 (例如 v1.0.0)
-    # 可选：您可以指定只有当这些文件变化时才触发
+    # 可选：您可以指定只有当这些文件变化时才触发，节省GitHub Actions的时间
     paths:
       - "Dockerfile"
       - "init.sh"
+      - "template/**"
 
-  # 2. 触发方式三：手动触发，并允许输入自定义标签
+  # 2. 【保留原有功能】仍然保留手动触发的选项，方便测试
   workflow_dispatch:
-    inputs:
-      tag:
-        description: "请输入要构建的Docker标签 (例如 my-test-build)"
-        required: true
-        default: "manual-latest"
 
 permissions:
   contents: read
-  packages: write
+  packages: write # 必须的权限，用于推送镜像到ghcr.io
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
+  IMAGE_NAME: ${{ github.repository }} # 自动解析为 "owner/repo-name"，例如 "your-username/your-repo-name"
 
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
-    name: "Build and push image with a single tag"
+    name: "Build and push image"
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 0 # 获取所有历史记录，以便git-tag能正常工作
 
-      - name: Set up QEMU
+      - name: Set up QEMU # 用于支持多平台构建，比如ARM
         uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      # 3. 【新的登录方式】登录到GitHub Container Registry
       - name: Log in to Container Registry
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          username: ${{ github.actor }} # 使用触发此workflow的用户名
+          password: ${{ secrets.GITHUB_TOKEN }} # 使用GitHub免费提供的Token，无需额外创建！
 
-      # 【核心修改】智能单一标签策略
-      - name: Extract single metadata tag
+      # 4. 【新的标签策略】自动生成动态标签
+      - name: Extract metadata (tags, labels)
         id: meta
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          # 设置标签生成规则，确保每次只生成一个标签
+          # 定义标签的生成规则
           tags: |
-            # 规则1: 如果是手动触发 (workflow_dispatch)，使用输入的tag
-            type=raw,value=${{ github.event.inputs.tag }},enable=${{ github.event_name == 'workflow_dispatch' }}
-            # 规则2: 如果是推送git标签 (如 v1.2.0)，直接使用该git标签名
-            type=ref,event=tag,enable=${{ startsWith(github.ref, 'refs/tags/') }}
-            # 规则3: 如果是推送到main分支，使用短commit hash作为标签 (例如 a1b2c3d)
-            # 这是最佳实践，比 'latest' 更精确，可追溯
-            type=sha,prefix=,enable=${{ github.ref == 'refs/heads/main' }}
-
-      # 确认生成的标签（方便调试）
-      - name: Log generated tags
-        run: |
-          echo "Generated tags: ${{ steps.meta.outputs.tags }}"
+            # a) 推送到main分支时，创建一个 'latest' 标签
+            type=raw,value=latest,enable={{is_default_branch}}
+            # b) 为每一次提交，创建一个基于commit hash的短标签，例如 'main-a1b2c3d'
+            type=ref,event=branch
+            type=sha,prefix={{branch}}- # 这是推荐的，清晰且唯一
+            # c) 如果您创建了git tag (如 v1.0)，推送时会自动触发并创建对应的镜像标签
+            type=ref,event=tag
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
-          context: .
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ${{ steps.meta.outputs.tags }} # 这里现在每次只有一个标签
-          labels: ${{ steps.meta.outputs.labels }}
+          context: . # 构建上下文是仓库根目录
+          platforms: linux/amd64, linux/arm64 # 保留多平台支持，很棒！
+          push: true # 登录成功后，将构建的镜像推送出去
+          tags: ${{ steps.meta.outputs.tags }} # 使用上一步生成的所有标签
+          labels: ${{ steps.meta.outputs.labels }} # 同样生成元数据标签
+          # 【性能优化】启用缓存，加速后续构建
           cache-from: type=gha
           cache-to: type=gha,mode=max

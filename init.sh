@@ -161,30 +161,28 @@ EOF
   fi
   
   # 下载需要的应用
+  # 下载 dashboard
   if [ -z "$DASHBOARD_VERSION" ]; then
     wget -O /tmp/dashboard.zip ${GH_PROXY}https://github.com/nezhahq/nezha/releases/latest/download/dashboard-linux-$ARCH.zip
-    if [ -z "$AGENT_VERSION" ]; then
-      wget -O $WORK_DIR/nezha-agent.zip ${GH_PROXY}https://github.com/nezhahq/agent/releases/latest/download/nezha-agent_linux_$ARCH.zip
-    elif [[ "$AGENT_VERSION" =~ 1\.[0-9]{1,2}\.[0-9]{1,2}$ ]]; then
-      AGENT_LATEST=$(sed 's/v//; s/^/v&/' <<< "$AGENT_VERSION")
-      wget -O $WORK_DIR/nezha-agent.zip ${GH_PROXY}https://github.com/nezhahq/agent/releases/download/$AGENT_LATEST/nezha-agent_linux_$ARCH.zip
-    else
-      error "The AGENT_VERSION variable is not in the correct format, please check."
-    fi
-  elif [[ "$DASHBOARD_VERSION" =~ 0\.[0-9]{1,2}\.[0-9]{1,2}$ ]]; then
-    [-z "$GH_USER" || -z "$GH_CLIENTID" || -z "$GH_CLIENTSECRET"] && error " There are github variables that are not set. "
+  elif [[ "$DASHBOARD_VERSION" =~ ^0\.[0-9]{1,2}\.[0-9]{1,2}$ ]]; then
+    [ -z "$GH_USER" ] || [ -z "$GH_CLIENTID" ] || [ -z "$GH_CLIENTSECRET" ] && error "There are github variables that are not set."
     DASHBOARD_LATEST=$(sed 's/v//; s/^/v&/' <<< "$DASHBOARD_VERSION")
     wget -O /tmp/dashboard.zip ${GH_PROXY}https://github.com/naiba/nezha/releases/download/$DASHBOARD_LATEST/dashboard-linux-$ARCH.zip
-    if [ -z "$AGENT_VERSION" ]; then
-      wget -O $WORK_DIR/nezha-agent.zip ${GH_PROXY}https://github.com/nezhahq/agent/releases/download/v0.20.5/nezha-agent_linux_$ARCH.zip
-    elif [[ "$AGENT_VERSION" =~ 0\.[0-9]{1,2}\.[0-9]{1,2}$ ]]; then
-      AGENT_LATEST=$(sed 's/v//; s/^/v&/' <<< "$AGENT_VERSION")
-      wget -O $WORK_DIR/nezha-agent.zip ${GH_PROXY}https://github.com/nezhahq/agent/releases/download/$AGENT_LATEST/nezha-agent_linux_$ARCH.zip
-    else
-      error "The AGENT_VERSION variable is not in the correct format, please check."
-    fi
+  elif [[ "$DASHBOARD_VERSION" =~ ^1\.[0-9]{1,2}\.[0-9]{1,2}$ ]]; then
+    DASHBOARD_LATEST=$(sed 's/v//; s/^/v&/' <<< "$DASHBOARD_VERSION")
+    wget -O /tmp/dashboard.zip ${GH_PROXY}https://github.com/nezhahq/nezha/releases/download/$DASHBOARD_LATEST/dashboard-linux-$ARCH.zip
   else
     error "The DASHBOARD_VERSION variable is not in the correct format, please check."
+  fi
+
+  # 下载 agent
+  if [ -z "$AGENT_VERSION" ]; then
+    wget -O $WORK_DIR/nezha-agent.zip ${GH_PROXY}https://github.com/nezhahq/agent/releases/latest/download/nezha-agent_linux_$ARCH.zip
+  elif [[ "$AGENT_VERSION" =~ ^[0-1]\.[0-9]{1,2}\.[0-9]{1,2}$ ]]; then
+    AGENT_LATEST=$(sed 's/v//; s/^/v&/' <<< "$AGENT_VERSION")
+    wget -O $WORK_DIR/nezha-agent.zip ${GH_PROXY}https://github.com/nezhahq/agent/releases/download/$AGENT_LATEST/nezha-agent_linux_$ARCH.zip
+  else
+    error "The AGENT_VERSION variable is not in the correct format, please check."
   fi
   unzip -o /tmp/dashboard.zip -d /tmp
   [ -d /tmp/dist ] && mv /tmp/dist/dashboard-linux-$ARCH /tmp/dashboard-linux-$ARCH
